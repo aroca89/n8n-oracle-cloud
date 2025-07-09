@@ -5,18 +5,19 @@ Sistema completo de automatizaciones con n8n optimizado para Oracle Cloud Always
 ## ✅ Características
 
 - **n8n** - Herramienta de automatización visual
-- **PostgreSQL** - Base de datos robusta
+- **PostgreSQL** - Base de datos robusta  
 - **Nginx** - Proxy reverso con SSL
 - **Backup automático** - Respaldos diarios
 - **Seguridad** - Autenticación y encriptación
 - **Oracle Cloud optimizado** - Configuración específica para OCI
+- **🌐 Cloudflare ready** - Configuración optimizada para dominios Cloudflare
 
 ## 🏗️ Arquitectura
 
 ```
-Internet → Nginx (SSL) → n8n → PostgreSQL
-                    ↓
-               Backups automáticos
+Internet → Cloudflare → Nginx → n8n → PostgreSQL
+                           ↓
+                    Backups automáticos
 ```
 
 ## 📋 Requisitos previos
@@ -31,11 +32,73 @@ Internet → Nginx (SSL) → n8n → PostgreSQL
    - Security List: Puertos 80, 443 abiertos
    - Public IP asignada
 
-3. **Dominio propio** (opcional pero recomendado)
+3. **Dominio propio** (recomendado: Cloudflare)
 
-## 🚀 Instalación automática
+## 🌐 Instalación con Cloudflare (Recomendado)
 
-### Paso 1: Conectar a tu servidor Oracle Cloud
+### Paso 1: Configurar DNS en Cloudflare
+```
+Type: A
+Name: n8n
+IPv4: TU-IP-DE-ORACLE-CLOUD
+Proxy: 🟠 Proxied
+```
+
+### Paso 2: Conectar al servidor Oracle Cloud
+```bash
+ssh -i tu-clave.key ubuntu@tu-ip-publica
+```
+
+### Paso 3: Instalación automática con Cloudflare
+```bash
+# Clonar repositorio
+git clone https://github.com/aroca89/n8n-oracle-cloud.git
+cd n8n-oracle-cloud
+
+# Usar configuración optimizada para Cloudflare
+cp docker-compose-cloudflare.yml docker-compose.yml
+```
+
+### Paso 4: Configurar el entorno
+```bash
+# Copiar plantilla de configuración
+cp .env.example .env
+
+# Editar con tu dominio
+nano .env
+```
+
+Configurar:
+```env
+DOMAIN_URL=https://n8n.tu-dominio.com
+N8N_PASSWORD=tu-password-seguro
+```
+
+### Paso 5: Ejecutar instalación
+```bash
+# Crear estructura necesaria
+mkdir -p {nginx,workflows,credentials,backups,scripts}
+cp nginx/nginx-cloudflare.conf nginx/nginx.conf
+cp nginx/cloudflare-ips.conf nginx/
+
+# Crear certificados SSL autofirmados
+mkdir -p nginx/ssl
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout nginx/ssl/nginx-selfsigned.key \
+  -out nginx/ssl/nginx-selfsigned.crt \
+  -subj "/C=ES/ST=Madrid/L=Madrid/O=n8n/CN=localhost"
+
+# Iniciar servicios
+docker-compose up -d
+```
+
+**📖 [Guía completa de Cloudflare](CLOUDFLARE-SETUP.md)**
+
+---
+
+## 🚀 Instalación tradicional (sin Cloudflare)
+
+### Paso 1: Conectar al servidor Oracle Cloud
 ```bash
 ssh -i tu-clave.key ubuntu@tu-ip-publica
 ```
@@ -51,11 +114,6 @@ cd ~/n8n-server
 nano .env
 ```
 
-Editar:
-```env
-DOMAIN_URL=https://tu-dominio.com
-```
-
 ### Paso 4: Iniciar servicios
 ```bash
 ./scripts/start.sh
@@ -67,6 +125,8 @@ docker-compose run --rm certbot certonly --webroot \
   --webroot-path /var/www/certbot \
   -d tu-dominio.com
 ```
+
+---
 
 ## 📊 Gestión del sistema
 
@@ -98,17 +158,74 @@ docker-compose pull && docker-compose up -d
 - **Usuario:** admin
 - **Contraseña:** Generada automáticamente (ver .env)
 
-### Backup de seguridad:
-- Backups automáticos diarios a las 2:00 AM
-- Retención: 7 días
-- Ubicación: `~/n8n-server/backups/`
+### Con Cloudflare (recomendado):
+- ✅ SSL/TLS automático
+- ✅ Protección DDoS
+- ✅ WAF (Web Application Firewall)
+- ✅ Rate limiting
+- ✅ Bot protection
 
 ## 📱 Acceso
 
-- **URL:** https://tu-dominio.com (o http://tu-ip:5678)
+- **Con Cloudflare:** https://n8n.tu-dominio.com
+- **Sin Cloudflare:** https://tu-dominio.com (o http://tu-ip:5678)
 - **Usuario:** admin
 - **Contraseña:** Ver archivo .env
+
+## 🔄 Configuraciones disponibles
+
+| Archivo | Uso |
+|---------|-----|
+| `docker-compose.yml` | Configuración estándar con Let's Encrypt |
+| `docker-compose-cloudflare.yml` | Configuración optimizada para Cloudflare |
+| `nginx/nginx.conf` | Nginx estándar con SSL |
+| `nginx/nginx-cloudflare.conf` | Nginx optimizado para Cloudflare |
+
+## 🆘 Soporte y troubleshooting
+
+### Logs importantes:
+```bash
+# Logs de n8n
+docker-compose logs -f n8n
+
+# Logs de nginx
+docker-compose logs -f nginx
+
+# Logs del sistema
+sudo journalctl -f
+```
+
+### Problemas comunes:
+
+1. **Error de conexión:**
+   - Verificar DNS en Cloudflare
+   - Comprobar firewall: `sudo ufw status`
+
+2. **SSL no funciona:**
+   - Con Cloudflare: Verificar SSL mode = "Full (strict)"
+   - Sin Cloudflare: Regenerar certificados
+
+3. **n8n no inicia:**
+   - Ver logs: `docker-compose logs n8n`
+   - Verificar .env: `cat .env`
+
+## 📄 Documentación adicional
+
+- **[🌐 Configuración de Cloudflare](CLOUDFLARE-SETUP.md)** - Guía completa para dominios Cloudflare
+- **[📝 Variables de entorno](.env.example)** - Plantilla de configuración
+
+## 📄 Licencia
+
+Este proyecto es para uso personal y automatizaciones privadas.
 
 ---
 
 **¡Disfruta automatizando tus procesos con n8n! 🎉**
+
+### 🚀 ¿Por qué elegir esta configuración?
+
+- **Gratis para siempre** con Oracle Cloud Always Free
+- **Escalable** hasta 4 OCPUs y 24GB RAM
+- **Seguro** con Cloudflare y autenticación
+- **Profesional** con dominio propio y SSL
+- **Confiable** con backups automáticos
