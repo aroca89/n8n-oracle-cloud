@@ -1,0 +1,39 @@
+{
+  "name": "oracle-cloud-mcp-server",
+  "version": "0.1.0",
+  "description": "Model Context Protocol server for Oracle Cloud Infrastructure management",
+  "main": "oracle-cloud-server.js",
+  "type": "module",
+  "bin": {
+    "oracle-cloud-mcp-server": "./oracle-cloud-server.js"
+  },
+  "scripts": {
+    "start": "node oracle-cloud-server.js",
+    "dev": "node --inspect oracle-cloud-server.js",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "oracle-cloud",
+    "oci",
+    "automation",
+    "cloud-management"
+  ],
+  "author": "Aritz Roca Pazos",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.4.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aroca89/n8n-oracle-cloud.git"
+  },
+  "bugs": {
+    "url": "https://github.com/aroca89/n8n-oracle-cloud/issues"
+  },
+  "homepage": "https://github.com/aroca89/n8n-oracle-cloud#readme"
+}
