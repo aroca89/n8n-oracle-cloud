@@ -1,0 +1,49 @@
+# Variables de entorno y configuraciones sensibles
+.env
+*.env
+
+# Directorios de datos locales
+backups/
+workflows/
+credentials/
+nginx/ssl/
+certbot/
+
+# Logs
+*.log
+logs/
+
+# Archivos temporales
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# Archivos de Docker
+docker-compose.override.yml
+
+# Certificados SSL locales
+*.pem
+*.key
+*.crt
+
+# Backups locales
+*.sql
+*.tar.gz
+*.zip
+
+# IDE y editores
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Sistema operativo
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
