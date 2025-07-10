@@ -1,0 +1,182 @@
+#!/bin/bash
+
+#cloud-config
+# 🚀 Oracle Cloud Init Script - n8n Automation Powerhouse
+# Instalación automática completa para ARM A1 maximizada
+
+# Configuración inicial del sistema
+package_update: true
+package_upgrade: true
+
+# Paquetes esenciales a instalar
+packages:
+  - curl
+  - wget
+  - git
+  - htop
+  - vim
+  - ufw
+  - fail2ban
+  - apt-transport-https
+  - ca-certificates
+  - gnupg
+  - lsb-release
+  - software-properties-common
+
+# Crear usuario y directorio de trabajo
+users:
+  - name: n8n-admin
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    groups: docker
+
+# Configuración de firewall automática
+runcmd:
+  # Configurar timezone
+  - timedatectl set-timezone Europe/Madrid
+  
+  # Optimizar kernel para ARM y alta carga
+  - echo 'net.core.somaxconn = 65535' >> /etc/sysctl.conf
+  - echo 'net.core.netdev_max_backlog = 5000' >> /etc/sysctl.conf
+  - echo 'net.ipv4.tcp_max_syn_backlog = 65535' >> /etc/sysctl.conf
+  - echo 'vm.swappiness = 10' >> /etc/sysctl.conf
+  - echo 'vm.max_map_count = 262144' >> /etc/sysctl.conf
+  - echo 'fs.file-max = 2097152' >> /etc/sysctl.conf
+  - sysctl -p
+  
+  # Configurar límites del sistema
+  - echo '* soft nofile 65535' >> /etc/security/limits.conf
+  - echo '* hard nofile 65535' >> /etc/security/limits.conf
+  - echo '* soft nproc 32768' >> /etc/security/limits.conf
+  - echo '* hard nproc 32768' >> /etc/security/limits.conf
+  
+  # Instalar Docker optimizado para ARM
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+  - echo "deb [arch=arm64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  
+  # Configurar Docker daemon para ARM
+  - mkdir -p /etc/docker
+  - |
+    cat > /etc/docker/daemon.json << 'EOL'
+    {
+        "log-driver": "json-file",
+        "log-opts": {
+            "max-size": "10m",
+            "max-file": "3"
+        },
+        "storage-driver": "overlay2",
+        "experimental": false,
+        "metrics-addr": "127.0.0.1:9323"
+    }
+    EOL
+  
+  # Iniciar y habilitar Docker
+  - systemctl restart docker
+  - systemctl enable docker
+  - usermod -aG docker ubuntu
+  
+  # Configurar firewall
+  - ufw --force reset
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow ssh
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw allow 5678/tcp
+  - ufw allow 3000/tcp
+  - ufw --force enable
+  
+  # Crear swap de 4GB para optimizar memoria
+  - fallocate -l 4G /swapfile
+  - chmod 600 /swapfile
+  - mkswap /swapfile
+  - swapon /swapfile
+  - echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  
+  # Crear directorio del proyecto
+  - mkdir -p /home/ubuntu/n8n-powerhouse
+  - chown ubuntu:ubuntu /home/ubuntu/n8n-powerhouse
+  
+  # Clonar repositorio y ejecutar instalación maximizada
+  - cd /home/ubuntu
+  - sudo -u ubuntu git clone https://github.com/aroca89/n8n-oracle-cloud.git n8n-powerhouse
+  - cd /home/ubuntu/n8n-powerhouse
+  - chown -R ubuntu:ubuntu /home/ubuntu/n8n-powerhouse
+  
+  # Ejecutar instalación maximizada como usuario ubuntu
+  - sudo -u ubuntu bash /home/ubuntu/n8n-powerhouse/install-maximized.sh
+  
+  # Crear servicio systemd para auto-inicio
+  - |
+    cat > /etc/systemd/system/n8n-powerhouse.service << 'EOL'
+    [Unit]
+    Description=n8n Automation Powerhouse
+    Requires=docker.service
+    After=docker.service
+    
+    [Service]
+    Type=oneshot
+    RemainAfterExit=yes
+    WorkingDirectory=/home/ubuntu/n8n-powerhouse
+    ExecStart=/usr/bin/docker-compose -f docker-compose-maximized.yml up -d
+    ExecStop=/usr/bin/docker-compose -f docker-compose-maximized.yml down
+    TimeoutStartSec=0
+    User=ubuntu
+    Group=ubuntu
+    
+    [Install]
+    WantedBy=multi-user.target
+    EOL
+  
+  - systemctl enable n8n-powerhouse.service
+  - systemctl start n8n-powerhouse.service
+  
+  # Configurar backup automático diario
+  - echo '0 2 * * * ubuntu /home/ubuntu/n8n-powerhouse/scripts/backup.sh' >> /etc/crontab
+  
+  # Configurar log de instalación
+  - echo "$(date): n8n Powerhouse instalación completada" >> /var/log/cloud-init-custom.log
+  - echo "IP pública: $(curl -s ifconfig.me)" >> /var/log/cloud-init-custom.log
+  - echo "Acceso n8n: https://$(curl -s ifconfig.me):5678" >> /var/log/cloud-init-custom.log
+  - echo "Acceso Grafana: https://$(curl -s ifconfig.me):3000" >> /var/log/cloud-init-custom.log
+
+# Escribir archivos de configuración
+write_files:
+  # Archivo de bienvenida
+  - path: /home/ubuntu/BIENVENIDA.txt
+    content: |
+      🚀 n8n Automation Powerhouse - Oracle Cloud ARM
+      ================================================
+      
+      Tu sistema está siendo configurado automáticamente.
+      
+      Servicios que se están instalando:
+      ✅ Docker optimizado para ARM
+      ✅ n8n con alta disponibilidad (2 instancias)
+      ✅ PostgreSQL con 6GB buffer
+      ✅ Redis para colas y cache
+      ✅ Nginx con SSL y load balancing
+      ✅ Grafana + Prometheus monitoring
+      ✅ Backup automático diario
+      
+      El proceso completo tarda 10-15 minutos.
+      
+      Una vez completado:
+      - n8n: https://TU-IP:5678
+      - Grafana: https://TU-IP:3000
+      - Credenciales: ~/n8n-powerhouse/credentials.txt
+      
+      Para verificar el progreso:
+      tail -f /var/log/cloud-init-output.log
+      
+      ¡Disfruta automatizando! 🎉
+    owner: ubuntu:ubuntu
+    permissions: '0644'
+
+# Reiniciar servicios al final
+power_state:
+  mode: reboot
+  delay: "+5"
+  message: "Reiniciando para aplicar todas las configuraciones..."
