@@ -1,0 +1,333 @@
+version: '3.8'
+
+services:
+  # === NGINX LOAD BALANCER & SSL TERMINATION ===
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx-maximized.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_cache:/var/cache/nginx
+    depends_on:
+      - n8n-primary
+      - n8n-secondary
+    networks:
+      - n8n-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # === N8N PRIMARY INSTANCE (High Performance) ===
+  n8n-primary:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    hostname: n8n-primary
+    environment:
+      # Database Configuration
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      
+      # Queue Configuration (Redis)
+      - QUEUE_BULL_REDIS_HOST=redis
+      - QUEUE_BULL_REDIS_PORT=6379
+      - QUEUE_BULL_REDIS_DB=0
+      - EXECUTIONS_MODE=queue
+      - EXECUTIONS_PROCESS=main
+      
+      # Performance Optimizations for ARM
+      - N8N_WORKERS_AUTO_SCALE_MAX_WORKERS=8
+      - N8N_WORKERS_AUTO_SCALE_MIN_WORKERS=2
+      - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
+      - N8N_BINARY_DATA_TTL=60
+      
+      # Application Configuration
+      - N8N_HOST=${N8N_HOST:-0.0.0.0}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - WEBHOOK_URL=${WEBHOOK_URL}
+      - GENERIC_TIMEZONE=${TIMEZONE:-UTC}
+      
+      # Security
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD}
+      
+      # Storage
+      - N8N_USER_FOLDER=/home/node/.n8n
+      - N8N_LOG_LEVEL=info
+      
+      # Instance identification
+      - N8N_INSTANCE_ID=primary
+      
+    volumes:
+      - n8n_data_primary:/home/node/.n8n
+      - n8n_files:/files
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - n8n-network
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: '2.0'
+        reservations:
+          memory: 4G
+          cpus: '1.0'
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # === N8N SECONDARY INSTANCE (Load Balancing) ===
+  n8n-secondary:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    hostname: n8n-secondary
+    environment:
+      # Database Configuration (Shared)
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      
+      # Queue Configuration (Shared Redis)
+      - QUEUE_BULL_REDIS_HOST=redis
+      - QUEUE_BULL_REDIS_PORT=6379
+      - QUEUE_BULL_REDIS_DB=0
+      - EXECUTIONS_MODE=queue
+      - EXECUTIONS_PROCESS=worker
+      
+      # Performance Optimizations
+      - N8N_WORKERS_AUTO_SCALE_MAX_WORKERS=6
+      - N8N_WORKERS_AUTO_SCALE_MIN_WORKERS=1
+      - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
+      
+      # Application Configuration
+      - N8N_HOST=${N8N_HOST:-0.0.0.0}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - WEBHOOK_URL=${WEBHOOK_URL}
+      - GENERIC_TIMEZONE=${TIMEZONE:-UTC}
+      
+      # Security (Shared)
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD}
+      
+      # Storage (Shared)
+      - N8N_USER_FOLDER=/home/node/.n8n
+      - N8N_LOG_LEVEL=info
+      
+      # Instance identification
+      - N8N_INSTANCE_ID=secondary
+      
+    volumes:
+      - n8n_data_secondary:/home/node/.n8n
+      - n8n_files:/files
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - n8n-network
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: '1.5'
+        reservations:
+          memory: 3G
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # === POSTGRESQL DATABASE (Optimized for ARM) ===
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_INITDB_ARGS=--auth-host=md5
+      
+      # Performance tuning for 24GB RAM
+      - POSTGRES_SHARED_BUFFERS=6GB
+      - POSTGRES_EFFECTIVE_CACHE_SIZE=18GB
+      - POSTGRES_MAINTENANCE_WORK_MEM=2GB
+      - POSTGRES_WORK_MEM=256MB
+      - POSTGRES_MAX_CONNECTIONS=200
+      
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    networks:
+      - n8n-network
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+          cpus: '1.0'
+        reservations:
+          memory: 3G
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # === REDIS CACHE & QUEUE ===
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - n8n-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # === MONITORING WITH GRAFANA ===
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin123}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./monitoring/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+    networks:
+      - n8n-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.25'
+
+  # === PROMETHEUS METRICS ===
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - n8n-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+
+  # === BACKUP SERVICE ===
+  backup:
+    image: alpine:latest
+    restart: "no"
+    command: /bin/sh -c "apk add --no-cache postgresql-client && /scripts/backup.sh"
+    volumes:
+      - ./scripts/backup.sh:/scripts/backup.sh:ro
+      - ./backups:/backups
+      - postgres_data:/var/lib/postgresql/data:ro
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    depends_on:
+      - postgres
+    networks:
+      - n8n-network
+    profiles:
+      - backup
+
+  # === LOG AGGREGATION (ELK STACK LITE) ===
+  elasticsearch:
+    image: elasticsearch:8.8.0
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx1g"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - n8n-network
+    deploy:
+      resources:
+        limits:
+          memory: 1.5G
+          cpus: '0.5'
+
+volumes:
+  n8n_data_primary:
+    driver: local
+  n8n_data_secondary:
+    driver: local
+  n8n_files:
+    driver: local
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  grafana_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  elasticsearch_data:
+    driver: local
+  nginx_cache:
+    driver: local
+
+networks:
+  n8n-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
